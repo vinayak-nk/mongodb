@@ -1,8 +1,12 @@
 const Router = require('express').Router;
+const db = require('../db');
 
+const mongodb = require('mongodb')
+
+const Decimal128 = mongodb.Decimal128
 const router = Router();
 
-const products = [
+const products_ = [
   {
     _id: 'fasdlk1j',
     name: 'Stylish Backpack',
@@ -53,6 +57,7 @@ const products = [
 
 // Get list of products products
 router.get('/', (req, res, next) => {
+  /*
   // Return a list of dummy products
   // Later, this data will be fetched from MongoDB
   const queryPage = req.query.page;
@@ -65,12 +70,43 @@ router.get('/', (req, res, next) => {
     );
   }
   res.json(resultProducts);
+  */
+  const products = [];
+  db.getDB()
+    .db()
+    .collection('products')
+    .find()
+    .sort({price: -1})
+    // .skip((queryPage - 1) * pageSize)
+    // .limit(pageSize)
+    .forEach(productDoc => {
+      productDoc.price = productDoc.price.toString();
+      products.push(productDoc);
+    })
+    .then(result => {
+      res.status(200).json(products);
+    })
+    .catch(err => {
+      console.log(err);
+      res.status(500).json({ message: 'An error occurred.' });
+    });
 });
 
 // Get single product
 router.get('/:id', (req, res, next) => {
-  const product = products.find(p => p._id === req.params.id);
-  res.json(product);
+  // const product = products.find(p => p._id === req.params.id);
+  db.getDB()
+    .db()
+    .collection('products')
+    .findOne({ _id: new mongodb.ObjectId(req.params.id) })
+    .then(product => {
+      product.price = product.price.toString();
+      res.status(200).json(product);
+    })
+    .catch(err => {
+      console.log(err);
+      res.status(500).json({ message: 'An error occurred.' });
+    });
 });
 
 // Add new product
@@ -79,11 +115,19 @@ router.post('', (req, res, next) => {
   const newProduct = {
     name: req.body.name,
     description: req.body.description,
-    price: parseFloat(req.body.price), // store this as 128bit decimal in MongoDB
+    price: Decimal128.fromString(req.body.price.toString()), // store this as 128bit decimal in MongoDB
     image: req.body.image
   };
-  console.log(newProduct);
-  res.status(201).json({ message: 'Product added', productId: 'DUMMY' });
+  db.getDB().db().collection('products')
+    .insertOne(newProduct)
+    .then(result => {
+      console.log("result", result)
+      res.status(201).json({ message: 'Product added', productId: result.insertedId });
+    })
+    .catch(err => {
+      console.log(err)
+      res.status(201).json({ message: 'Failed to add Product' });
+    })
 });
 
 // Edit existing product
@@ -92,17 +136,32 @@ router.patch('/:id', (req, res, next) => {
   const updatedProduct = {
     name: req.body.name,
     description: req.body.description,
-    price: parseFloat(req.body.price), // store this as 128bit decimal in MongoDB
+    price: Decimal128.fromString(req.body.price.toString()), // store this as 128bit decimal in MongoDB
     image: req.body.image
   };
   console.log(updatedProduct);
-  res.status(200).json({ message: 'Product updated', productId: 'DUMMY' });
+  db.getDB().db().collection('products').updateOne(
+    {_id: new mongodb.ObjectId(req.params.id)},
+    {$set: { ...updatedProduct }}
+  ).then(result => {
+    res.status(200).json({ message: 'Product updated', productId: req.params.id });
+  }).catch(err => {
+    res.status(200).json({ message: `Error while updating product ${err}` });
+  })
 });
 
 // Delete a product
 // Requires logged in user
 router.delete('/:id', (req, res, next) => {
-  res.status(200).json({ message: 'Product deleted' });
+  db.getDB().db().collection('products')
+    .deleteOne({ _id: new mongodb.ObjectId(req.params.id) })
+    .then(res => {
+      res.status(200).json({ message: `Product deleted: ${eq.params.id}` });
+    })
+    .catch(err => {
+      res.status(200).json({ message: `Error while deleting product ${err}` });
+    })
+
 });
 
 module.exports = router;
